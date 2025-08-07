@@ -1,7 +1,11 @@
 import axios from 'axios';
+import Constants from 'expo-constants';
+
+const extra = (Constants.expoConfig?.extra || {}) as any;
+const baseURL = extra.apiBaseUrl || process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3002';
 
 const api = axios.create({
-  baseURL: 'http://localhost:3002',
+  baseURL,
   timeout: 8000,
 });
 
