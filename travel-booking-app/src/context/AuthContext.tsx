@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User, SignUpPayload, AuthCredentials } from '../types';
-import { getSavedToken, signIn as serviceSignIn, signOut as serviceSignOut, signUp as serviceSignUp, verifyOtp as serviceVerifyOtp, getOtpHelpCode } from '../services/authService';
+import { getSavedToken, signIn as serviceSignIn, signOut as serviceSignOut, signUp as serviceSignUp, verifyOtpApi, saveToken } from '../services/authService';
 import { setAuthToken } from '../services/api';
 
 interface AuthContextValue {
@@ -9,7 +9,8 @@ interface AuthContextValue {
   token: string | null;
   isBootstrapping: boolean;
   hasPendingVerification: boolean;
-  otpHelpCode: string | null; // demo helper
+  devOtp?: string; // only in dev from API
+  pendingPhone?: string | null;
   signIn: (credentials: AuthCredentials) => Promise<boolean>;
   signOut: () => Promise<void>;
   signUp: (payload: SignUpPayload) => Promise<boolean>;
@@ -23,7 +24,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [token, setToken] = useState<string | null>(null);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [hasPendingVerification, setHasPendingVerification] = useState(false);
-  const [otpHelpCode, setOtpHelpCode] = useState<string | null>(null);
+  const [devOtp, setDevOtp] = useState<string | undefined>(undefined);
+  const [pendingPhone, setPendingPhone] = useState<string | null>(null);
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -32,16 +34,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (savedToken) {
           setAuthToken(savedToken);
           setToken(savedToken);
-          // In a real app, fetch user profile here. We'll mock a placeholder user.
           const savedUserRaw = await AsyncStorage.getItem('CURRENT_USER');
-          if (savedUserRaw) {
-            setUser(JSON.parse(savedUserRaw));
-          }
+          if (savedUserRaw) setUser(JSON.parse(savedUserRaw));
         }
-        const help = await getOtpHelpCode();
-        setOtpHelpCode(help);
-      } catch (e) {
-        // noop
+        const pending = await AsyncStorage.getItem('PENDING_PHONE');
+        if (pending) {
+          setHasPendingVerification(true);
+          setPendingPhone(pending);
+        }
       } finally {
         setIsBootstrapping(false);
       }
@@ -59,6 +59,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(res.user);
     setToken(res.token);
     await AsyncStorage.setItem('CURRENT_USER', JSON.stringify(res.user));
+    await saveToken(res.token);
     return true;
   };
 
@@ -66,18 +67,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const res = await serviceSignUp(payload);
     if (!res.otpSent) return false;
     setHasPendingVerification(true);
-    await AsyncStorage.setItem('PENDING_SIGNUP_DATA', JSON.stringify(payload));
+    setPendingPhone(payload.phone);
+    setDevOtp(res.devOtp);
+    await AsyncStorage.setItem('PENDING_PHONE', payload.phone);
+    await AsyncStorage.setItem('PENDING_SIGNUP_NAME', JSON.stringify({ firstName: payload.firstName, lastName: payload.lastName }));
     return true;
   };
 
   const verifyOtp = async (code: string) => {
-    const res = await serviceVerifyOtp(code);
+    if (!pendingPhone) return false;
+    const res = await verifyOtpApi(pendingPhone, code);
     if (!res) return false;
     setUser(res.user);
     setToken(res.token);
     setHasPendingVerification(false);
+    setPendingPhone(null);
+    setDevOtp(undefined);
     await AsyncStorage.setItem('CURRENT_USER', JSON.stringify(res.user));
-    await AsyncStorage.removeItem('PENDING_SIGNUP_DATA');
+    await AsyncStorage.removeItem('PENDING_PHONE');
+    await AsyncStorage.removeItem('PENDING_SIGNUP_NAME');
+    await saveToken(res.token);
     return true;
   };
 
@@ -89,8 +98,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const value = useMemo(
-    () => ({ user, token, isBootstrapping, hasPendingVerification, otpHelpCode, signIn, signOut, signUp, verifyOtp }),
-    [user, token, isBootstrapping, hasPendingVerification, otpHelpCode]
+    () => ({ user, token, isBootstrapping, hasPendingVerification, devOtp, pendingPhone, signIn, signOut, signUp, verifyOtp }),
+    [user, token, isBootstrapping, hasPendingVerification, devOtp, pendingPhone]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
