@@ -1,8 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User, SignUpPayload, AuthCredentials } from '../types';
-import { getSavedToken, signIn as serviceSignIn, signOut as serviceSignOut, signUp as serviceSignUp, verifyOtpApi, saveToken } from '../services/authService';
-import { setAuthToken } from '../services/api';
+import { signIn as serviceSignIn, signOut as serviceSignOut, signUp as serviceSignUp, verifyOtpApi, applyToken } from '../services/authService';
 
 interface AuthContextValue {
   user: User | null;
@@ -28,29 +26,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [pendingPhone, setPendingPhone] = useState<string | null>(null);
 
   useEffect(() => {
-    const bootstrap = async () => {
-      try {
-        const savedToken = await getSavedToken();
-        if (savedToken) {
-          setAuthToken(savedToken);
-          setToken(savedToken);
-          const savedUserRaw = await AsyncStorage.getItem('CURRENT_USER');
-          if (savedUserRaw) setUser(JSON.parse(savedUserRaw));
-        }
-        const pending = await AsyncStorage.getItem('PENDING_PHONE');
-        if (pending) {
-          setHasPendingVerification(true);
-          setPendingPhone(pending);
-        }
-      } finally {
-        setIsBootstrapping(false);
-      }
-    };
-    bootstrap();
+    // No persistence; bootstrapping is just immediate ready
+    setIsBootstrapping(false);
   }, []);
 
   useEffect(() => {
-    setAuthToken(token);
+    applyToken(token);
   }, [token]);
 
   const signIn = async (credentials: AuthCredentials) => {
@@ -58,8 +39,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!res) return false;
     setUser(res.user);
     setToken(res.token);
-    await AsyncStorage.setItem('CURRENT_USER', JSON.stringify(res.user));
-    await saveToken(res.token);
     return true;
   };
 
@@ -69,8 +48,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setHasPendingVerification(true);
     setPendingPhone(payload.phone);
     setDevOtp(res.devOtp);
-    await AsyncStorage.setItem('PENDING_PHONE', payload.phone);
-    await AsyncStorage.setItem('PENDING_SIGNUP_NAME', JSON.stringify({ firstName: payload.firstName, lastName: payload.lastName }));
     return true;
   };
 
@@ -83,10 +60,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setHasPendingVerification(false);
     setPendingPhone(null);
     setDevOtp(undefined);
-    await AsyncStorage.setItem('CURRENT_USER', JSON.stringify(res.user));
-    await AsyncStorage.removeItem('PENDING_PHONE');
-    await AsyncStorage.removeItem('PENDING_SIGNUP_NAME');
-    await saveToken(res.token);
     return true;
   };
 
@@ -94,7 +67,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await serviceSignOut();
     setUser(null);
     setToken(null);
-    await AsyncStorage.removeItem('CURRENT_USER');
   };
 
   const value = useMemo(

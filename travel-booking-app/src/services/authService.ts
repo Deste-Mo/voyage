@@ -1,8 +1,5 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import api, { setAuthToken } from './api';
 import { SignUpPayload, User, AuthCredentials } from '../types';
-
-const TOKEN_KEY = 'AUTH_TOKEN';
 
 export async function signUp(payload: SignUpPayload): Promise<{ otpSent: boolean; phone: string; devOtp?: string }> {
   const res = await api.post('/register', payload);
@@ -28,15 +25,9 @@ export async function signIn(credentials: AuthCredentials): Promise<{ user: User
 }
 
 export async function signOut(): Promise<void> {
-  await AsyncStorage.removeItem(TOKEN_KEY);
   setAuthToken(null);
 }
 
-export async function getSavedToken(): Promise<string | null> {
-  return AsyncStorage.getItem(TOKEN_KEY);
-}
-
-export async function saveToken(token: string) {
-  await AsyncStorage.setItem(TOKEN_KEY, token);
+export function applyToken(token: string | null) {
   setAuthToken(token);
 }
